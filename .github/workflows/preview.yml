@@ -1,0 +1,50 @@
+# Publishes the digest preview to GitHub Pages (ADR 0003). The page is saved by a command and
+# deployed as a Pages artifact, so no preview ever lands in git.
+name: preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      marker:
+        description: Show the lane marker (off for the clean-up upload)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: corepack enable && pnpm install --frozen-lockfile
+      - name: Save /digest/2026-10-28 as one HTML file
+        env:
+          LANE_ID: lane-07
+          LANE_MARKER: ${{ inputs.marker && secrets.LANE_MARKER || '' }}
+          PORT: 8787
+        run: |
+          pnpm start > rig.log 2>&1 &
+          for i in $(seq 1 30); do curl -fsS http://localhost:8787/health >/dev/null && break; sleep 1; done
+          mkdir -p _site
+          curl -fsS http://localhost:8787/digest/2026-10-28 -o _site/index.html
+          grep -o '<span class="marker">[^<]*' _site/index.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4
